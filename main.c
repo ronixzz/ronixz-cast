@@ -15,6 +15,9 @@
 #ifndef ORBIS_NET_SOL_SOCKET
 #define ORBIS_NET_SOL_SOCKET 0xffff
 #endif
+#ifndef ORBIS_NET_SO_NBIO
+#define ORBIS_NET_SO_NBIO 0x1200
+#endif
 #ifndef ORBIS_NET_SO_REUSEADDR
 #define ORBIS_NET_SO_REUSEADDR 4
 #endif
@@ -198,12 +201,53 @@ int main(void) {
     armar();
 
     char msg[128];
-    snprintf(msg, sizeof(msg), "Ronixz Cast iniciado. Busca '%s' en AirPlay.", nombre);
+    snprintf(msg, sizeof(msg), "Ronixz Cast listo. Nombre: %s, IP: %s, puerto: %d", nombre, ps4_ip, (int)puerto);
     aviso(msg);
 
+    if (ts >= 0) {
+        int uno2 = 1;
+        sceNetSetsockopt(ts, ORBIS_NET_SOL_SOCKET, ORBIS_NET_SO_NBIO, &uno2, sizeof(uno2));
+    }
+
+    int vuelta = 0;
     for (;;) {
-        sceNetSendto(s, pkt, plen, 0, (OrbisNetSockaddr*)&dest, sizeof(dest));
-        sceKernelSleep(2);
+        // anunciar la PS4 en la red cada ~2 segundos
+        if (vuelta % 10 == 0) {
+            sceNetSendto(s, pkt, plen, 0, (OrbisNetSockaddr*)&dest, sizeof(dest));
+        }
+        vuelta++;
+
+        // ver si el iPhone intenta conectarse y avisar en pantalla que pidio
+        if (ts >= 0) {
+            MiSockaddrIn ca;
+            unsigned int cl = sizeof(ca);
+            memset(&ca, 0, sizeof(ca));
+            int c = sceNetAccept(ts, (OrbisNetSockaddr*)&ca, &cl);
+            if (c >= 0) {
+                int uno3 = 1;
+                sceNetSetsockopt(c, ORBIS_NET_SOL_SOCKET, ORBIS_NET_SO_NBIO, &uno3, sizeof(uno3));
+                sceKernelUsleep(300000);
+                char buf[256];
+                memset(buf, 0, sizeof(buf));
+                int n = sceNetRecv(c, buf, sizeof(buf) - 1, 0);
+                char m[200];
+                if (n > 0) {
+                    char linea[90];
+                    int k = 0;
+                    for (int i = 0; i < n && k < 80 && buf[i] != '\r' && buf[i] != '\n'; i++) {
+                        unsigned char ch = (unsigned char)buf[i];
+                        linea[k++] = (ch >= 32 && ch < 127) ? (char)ch : '?';
+                    }
+                    linea[k] = 0;
+                    snprintf(m, sizeof(m), "Ronixz Cast: el iPhone pidio: %s", linea);
+                } else {
+                    snprintf(m, sizeof(m), "Ronixz Cast: el iPhone se conecto (sin datos)");
+                }
+                aviso(m);
+                sceNetSocketClose(c);
+            }
+        }
+        sceKernelUsleep(200000);
     }
     return 0;
 }
