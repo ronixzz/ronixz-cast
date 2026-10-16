@@ -19,7 +19,6 @@ jobs:
       - name: Bajar OpenOrbis (herramienta para hacer PKG de PS4)
         run: |
           curl -sL https://api.github.com/repos/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/latest > release.json
-          grep browser_download_url release.json || true
           URL=$(grep browser_download_url release.json | grep -E '\.tar\.gz' | head -1 | cut -d '"' -f 4)
           echo "Descargando: $URL"
           test -n "$URL"
@@ -29,14 +28,21 @@ jobs:
           tar -xzf oo.tar.gz
           TC=$(dirname $(find $HOME/oo -type d -name samples | head -1))
           echo "Toolchain en: $TC"
-          ls $TC
           echo "OO_PS4_TOOLCHAIN=$TC" >> $GITHUB_ENV
 
       - name: Preparar el proyecto con mi main.c
         run: |
           chmod +x $OO_PS4_TOOLCHAIN/bin/linux/* || true
           cp -r $OO_PS4_TOOLCHAIN/samples/hello_world $GITHUB_WORKSPACE/app
-          cp $GITHUB_WORKSPACE/main.c $GITHUB_WORKSPACE/app/src/main.c
+          echo "Archivos del ejemplo:"
+          find $GITHUB_WORKSPACE/app -maxdepth 2
+          MAIN=$(find $GITHUB_WORKSPACE/app -name main.c | head -1)
+          if [ -z "$MAIN" ]; then
+            MAIN=$(find $GITHUB_WORKSPACE/app -name '*.c' | head -1)
+          fi
+          echo "Reemplazando: $MAIN"
+          test -n "$MAIN"
+          cp $GITHUB_WORKSPACE/main.c "$MAIN"
           sed -i 's/^LIBS.*/LIBS := -lc -lkernel -lSceNet -lSceNetCtl -lSceSysmodule/' $GITHUB_WORKSPACE/app/Makefile
           grep -n "LIBS" $GITHUB_WORKSPACE/app/Makefile || true
 
