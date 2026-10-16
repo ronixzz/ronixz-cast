@@ -260,7 +260,7 @@ static void responder(int c, const char* buf, int n) {
             unsigned long long smlen = 0;
             memcpy(msg, ecdh_pk, 32);
             memcpy(msg + 32, their_ecdh, 32);
-            crypto_sign(sm, &smlen, msg, 64);   // sm = firma(64) + mensaje(64)
+            crypto_sign(sm, &smlen, msg, 64, ed_sk);   // sm = firma(64) + mensaje(64)
 
             // clave y vector de AES salen del secreto compartido
             unsigned char tmp[64], h[64], key[16], iv[16];
