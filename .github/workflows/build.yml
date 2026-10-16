@@ -37,6 +37,11 @@ jobs:
           cd $GITHUB_WORKSPACE/hello_world
           rm -f hello_world/main.cpp
           cp $GITHUB_WORKSPACE/main.c hello_world/main.c
+          curl -fL --retry 3 https://tweetnacl.cr.yp.to/20140427/tweetnacl.h -o hello_world/tweetnacl.h
+          curl -fL --retry 3 https://tweetnacl.cr.yp.to/20140427/tweetnacl.c -o hello_world/tn.inc
+          curl -fL --retry 3 https://raw.githubusercontent.com/kokke/tiny-AES-c/master/aes.h -o hello_world/aes.h
+          curl -fL --retry 3 https://raw.githubusercontent.com/kokke/tiny-AES-c/master/aes.c -o hello_world/aes.inc
+          ls -la hello_world
           sed -i 's/^LIBS.*/LIBS := -lc -lkernel -lSceNet -lSceNetCtl -lSceSysmodule/' Makefile
           sed -i 's/Hello World/Ronixz Cast/g; s/HELLOWORLD/RONIXZCAST/g; s/BREW00085/RCST00001/g' Makefile
           cp $GITHUB_WORKSPACE/IMG_6558.png sce_sys/icon0.png
