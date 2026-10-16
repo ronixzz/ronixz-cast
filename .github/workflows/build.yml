@@ -39,7 +39,7 @@ jobs:
           cp $GITHUB_WORKSPACE/main.c hello_world/main.c
           sed -i 's/^LIBS.*/LIBS := -lc -lkernel -lSceNet -lSceNetCtl -lSceSysmodule/' Makefile
           sed -i 's/Hello World/Ronixz Cast/g; s/HELLOWORLD/RONIXZCAST/g; s/BREW00085/RCST00001/g' Makefile
-          cp $GITHUB_WORKSPACE/icon0.png sce_sys/icon0.png
+          cp $GITHUB_WORKSPACE/IMG_6558.png sce_sys/icon0.png
           echo "===== Makefile ====="
           cat Makefile
 
