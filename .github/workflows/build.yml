@@ -33,26 +33,22 @@ jobs:
       - name: Preparar el proyecto con mi codigo
         run: |
           chmod +x $OO_PS4_TOOLCHAIN/bin/linux/* || true
-          cp -r $OO_PS4_TOOLCHAIN/samples/hello_world $GITHUB_WORKSPACE/app
-          MAIN=$(find $GITHUB_WORKSPACE/app -name main.cpp | head -1)
-          if [ -z "$MAIN" ]; then
-            MAIN=$(find $GITHUB_WORKSPACE/app -name main.c | head -1)
-          fi
-          echo "Reemplazando: $MAIN"
-          test -n "$MAIN"
-          sed 's|^int sceKernelSendNotificationRequest.*|extern "C" int sceKernelSendNotificationRequest(int, NotifReq*, size_t, int);|' $GITHUB_WORKSPACE/main.c > "$MAIN"
-          sed -i 's/^LIBS.*/LIBS := -lc -lkernel -lSceNet -lSceNetCtl -lSceSysmodule/' $GITHUB_WORKSPACE/app/Makefile
+          cp -r $OO_PS4_TOOLCHAIN/samples/hello_world $GITHUB_WORKSPACE/hello_world
+          cd $GITHUB_WORKSPACE/hello_world
+          rm -f hello_world/main.cpp
+          cp $GITHUB_WORKSPACE/main.c hello_world/main.c
+          sed -i 's/^LIBS.*/LIBS := -lc -lkernel -lSceNet -lSceNetCtl -lSceSysmodule/' Makefile
           echo "===== Makefile ====="
-          cat $GITHUB_WORKSPACE/app/Makefile
+          cat Makefile
 
       - name: Compilar
         run: |
-          cd $GITHUB_WORKSPACE/app
+          cd $GITHUB_WORKSPACE/hello_world
           make
 
       - name: Guardar el PKG
         uses: actions/upload-artifact@v4
         with:
           name: ronixz-cast-pkg
-          path: app/*.pkg
+          path: hello_world/*.pkg
           if-no-files-found: error
