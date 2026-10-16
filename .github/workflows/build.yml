@@ -1,0 +1,48 @@
+name: Crear PKG
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Bajar mi codigo
+        uses: actions/checkout@v4
+
+      - name: Instalar herramientas
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld llvm make curl
+
+      - name: Bajar OpenOrbis (herramienta para hacer PKG de PS4)
+        run: |
+          LATEST=$(curl -sL https://api.github.com/repos/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/latest | grep tag_name | grep -oE '[0-9]+(\.[0-9]+)+' | head -1)
+          echo "Version: $LATEST"
+          mkdir -p $HOME/oo
+          cd $HOME/oo
+          curl -L "https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/download/v$LATEST/v$LATEST.tar.gz" -o oo.tar.gz
+          tar -xzf oo.tar.gz
+          ls
+          echo "OO_PS4_TOOLCHAIN=$HOME/oo" >> $GITHUB_ENV
+
+      - name: Preparar el proyecto con mi main.c
+        run: |
+          chmod +x $OO_PS4_TOOLCHAIN/bin/linux/* || true
+          cp -r $OO_PS4_TOOLCHAIN/samples/hello_world $GITHUB_WORKSPACE/app
+          cp $GITHUB_WORKSPACE/main.c $GITHUB_WORKSPACE/app/src/main.c
+          sed -i 's/^LIBS.*/LIBS := -lc -lkernel -lSceNet -lSceNetCtl -lSceSysmodule/' $GITHUB_WORKSPACE/app/Makefile
+          grep -n "LIBS" $GITHUB_WORKSPACE/app/Makefile || true
+
+      - name: Compilar
+        run: |
+          cd $GITHUB_WORKSPACE/app
+          make
+
+      - name: Guardar el PKG
+        uses: actions/upload-artifact@v4
+        with:
+          name: ronixz-cast-pkg
+          path: app/*.pkg
+          if-no-files-found: error
