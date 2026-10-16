@@ -1,8 +1,4 @@
-// Ronixz Cast - PRIMER PASO (sin probar)
-// Hace que la PS4 se anuncie en la red como destino AirPlay.
-// Todavia NO recibe video: solo intenta aparecer en la lista de AirPlay.
-// La IP, el nombre, el host y el puerto se detectan/eligen solos.
-
+// Ronixz Cast - Corrección del bucle de Pair-Verify
 #include <orbis/libkernel.h>
 #include <orbis/Sysmodule.h>
 #include <orbis/Net.h>
@@ -13,10 +9,9 @@
 #include <stdlib.h>
 #include "tweetnacl.h"
 #include "aes.h"
-#include "tn.inc"   // codigo de tweetnacl (lo baja el compilador de GitHub)
-#include "aes.inc"  // codigo de tiny-AES (lo baja el compilador de GitHub)
+#include "tn.inc"   
+#include "aes.inc"  
 
-// Definiciones de red que OpenOrbis no trae (valores estandar de la PS4/FreeBSD)
 #ifndef ORBIS_NET_SOL_SOCKET
 #define ORBIS_NET_SOL_SOCKET 0xffff
 #endif
@@ -26,6 +21,7 @@
 #ifndef ORBIS_NET_SO_REUSEADDR
 #define ORBIS_NET_SO_REUSEADDR 4
 #endif
+
 typedef struct {
     uint8_t  sin_len;
     uint8_t  sin_family;
@@ -36,15 +32,14 @@ typedef struct {
 } MiSockaddrIn;
 
 #define NOMBRE_RESPALDO "Ronixz PS4"
-static char host_local[64];      // se arma solo a partir del nombre de la consola
-static uint16_t puerto = 7000;   // se reemplaza por un puerto libre que elige la PS4
+static char host_local[64];      
+static uint16_t puerto = 7000;   
 
 static char ps4_ip[16]   = "0.0.0.0";
 static char nombre[48]   = NOMBRE_RESPALDO;
-static char n_airplay[96];   // "<nombre>._airplay._tcp.local"
+static char n_airplay[96];   
 
-// ---------- criptografia (emparejamiento de AirPlay) ----------
-static unsigned char ed_pk[32], ed_sk[64];   // llave "de identidad" de la PS4
+static unsigned char ed_pk[32], ed_sk[64];   
 
 void randombytes(unsigned char* x, unsigned long long n) {
     static uint64_t st = 0;
@@ -80,7 +75,6 @@ static void a_b64(const unsigned char* in, int n, char* out) {
     out[o] = 0;
 }
 
-// ---------- aviso en pantalla de la PS4 ----------
 typedef struct {
     int type; int req_id; int priority; int msg_id; int target_id; int user_id;
     int unk1; int unk2; int app_id; int error_num; int unk3;
@@ -98,7 +92,6 @@ static void aviso(const char* texto) {
     sceKernelSendNotificationRequest(0, (OrbisNotificationRequest*)&n, sizeof(n), 0);
 }
 
-// ---------- armar el mensaje mDNS ----------
 static uint8_t pkt[1200];
 static int plen;
 
@@ -144,18 +137,18 @@ static void armar(void) {
     snprintf(n_airplay, sizeof(n_airplay), "%s._airplay._tcp.local", nombre);
 
     plen = 0;
-    w16(0); w16(0x8400); w16(0); w16(4); w16(0); w16(0); // cabecera: 4 respuestas
+    w16(0); w16(0x8400); w16(0); w16(4); w16(0); w16(0); 
 
-    rec_start("_airplay._tcp.local", 12, 1, &p);   // PTR
+    rec_start("_airplay._tcp.local", 12, 1, &p);   
     wname(n_airplay);
     rec_end(p);
 
-    rec_start(n_airplay, 33, 0x8001, &p);          // SRV
+    rec_start(n_airplay, 33, 0x8001, &p);          
     w16(0); w16(0); w16(puerto);
     wname(host_local);
     rec_end(p);
 
-    rec_start(n_airplay, 16, 0x8001, &p);          // TXT
+    rec_start(n_airplay, 16, 0x8001, &p);          
     txt("deviceid=AA:BB:CC:DD:EE:01");
     txt("features=0x5A7FFFF7,0x1E");
     txt("model=AppleTV3,2");
@@ -163,22 +156,21 @@ static void armar(void) {
     { char pkl[80]; strcpy(pkl, "pk="); a_hex(ed_pk, 32, pkl + 3); txt(pkl); }
     rec_end(p);
 
-    rec_start(host_local, 1, 0x8001, &p);                // A (IP)
+    rec_start(host_local, 1, 0x8001, &p);                
     w8(a); w8(b); w8(c); w8(d);
     rec_end(p);
 }
 
-// ---------- historial para poder tomar foto con calma ----------
 static char historial[4][160];
 static int total_hist = 0;
-static int repetir = 0;   // cuantas veces mas se vuelve a mostrar el resumen
+static int repetir = 0;   
 
 static void anotar(const char* linea) {
     strncpy(historial[total_hist % 4], linea, 159);
     historial[total_hist % 4][159] = 0;
     total_hist++;
     repetir = 5;
-    FILE* f = fopen("/data/ronixz_cast.log", "a"); // por si quieres leerlo despues
+    FILE* f = fopen("/data/ronixz_cast.log", "a"); 
     if (f) { fprintf(f, "%s\n", linea); fclose(f); }
 }
 
@@ -192,7 +184,6 @@ static void mostrar_resumen(void) {
     aviso(m);
 }
 
-// ---------- responder al iPhone ----------
 static void sacar_cseq(const char* buf, char* out, int max) {
     strcpy(out, "0");
     const char* p = strstr(buf, "CSeq:");
@@ -210,7 +201,7 @@ static void enviar_bin(int c, const char* estado, const char* cseq, const char* 
         "RTSP/1.0 %s\r\nServer: AirTunes/220.68\r\nCSeq: %s\r\n%sContent-Length: %d\r\n\r\n",
         estado, cseq, tipo, bl);
     sceNetSend(c, head, hl, 0);
-    if (bl > 0) sceNetSend(c, datos, bl, 0);
+    if (bl > 0 && datos) sceNetSend(c, datos, bl, 0);
 }
 
 static void enviar(int c, const char* estado, const char* cseq, const char* tipo, const char* cuerpo) {
@@ -241,28 +232,26 @@ static void responder(int c, const char* buf, int n) {
             "</dict></plist>\n", nombre, pkb64);
         enviar(c, "200 OK", cseq, "Content-Type: text/x-apple-plist+xml\r\n", cuerpo);
     } else if (strncmp(buf, "POST /pair-setup", 16) == 0) {
-        // paso 2: la PS4 entrega su llave publica de identidad (32 bytes)
         enviar_bin(c, "200 OK", cseq, "Content-Type: application/octet-stream\r\n", (const char*)ed_pk, 32);
     } else if (strncmp(buf, "POST /pair-verify", 17) == 0) {
-        // paso 3: verificacion con cifrado de verdad
         const char* fin = strstr(buf, "\r\n\r\n");
         const unsigned char* body = fin ? (const unsigned char*)(fin + 4) : NULL;
         int body_len = body ? n - (int)((const char*)body - buf) : 0;
+        
+        // Fase 1: Intercambio de llaves (El cuerpo tiene 68 bytes o mas)
         if (body_len >= 68 && body[0] == 1) {
-            const unsigned char* their_ecdh = body + 4;   // llave temporal del iPhone
+            const unsigned char* their_ecdh = body + 4; 
             unsigned char ecdh_sk[32], ecdh_pk[32], shared[32];
             randombytes(ecdh_sk, 32);
             crypto_scalarmult_base(ecdh_pk, ecdh_sk);
             crypto_scalarmult(shared, ecdh_sk, their_ecdh);
 
-            // firmar (llave temporal nuestra + llave temporal del iPhone)
             unsigned char msg[64], sm[128];
             unsigned long long smlen = 0;
             memcpy(msg, ecdh_pk, 32);
             memcpy(msg + 32, their_ecdh, 32);
-            crypto_sign(sm, &smlen, msg, 64, ed_sk);   // sm = firma(64) + mensaje(64)
+            crypto_sign(sm, &smlen, msg, 64, ed_sk);   
 
-            // clave y vector de AES salen del secreto compartido
             unsigned char tmp[64], h[64], key[16], iv[16];
             memcpy(tmp, "Pair-Verify-AES-Key", 19);
             memcpy(tmp + 19, shared, 32);
@@ -275,30 +264,27 @@ static void responder(int c, const char* buf, int n) {
 
             struct AES_ctx ctx;
             AES_init_ctx_iv(&ctx, key, iv);
-            AES_CTR_xcrypt_buffer(&ctx, sm, 64);   // cifrar la firma
+            AES_CTR_xcrypt_buffer(&ctx, sm, 64);   
 
             unsigned char resp[96];
             memcpy(resp, ecdh_pk, 32);
             memcpy(resp + 32, sm, 64);
             enviar_bin(c, "200 OK", cseq, "Content-Type: application/octet-stream\r\n", (const char*)resp, 96);
         } else {
-            // paso 4: confirmacion final del iPhone
+            // Fase 2: Confirmación del handshake del iPhone (Cuerpo de ~32 bytes o menor)
             enviar_bin(c, "200 OK", cseq, "Content-Type: application/octet-stream\r\n", NULL, 0);
         }
     } else if (strncmp(buf, "POST /fp-setup", 14) == 0) {
-        // paso esperado 4: FairPlay de Apple (respuesta de relleno)
         char d[142];
         for (int i = 0; i < 142; i++) d[i] = (char)((i * 3 + 9) & 255);
         enviar_bin(c, "200 OK", cseq, "Content-Type: application/octet-stream\r\n", d, 142);
     } else if (strncmp(buf, "OPTIONS", 7) == 0) {
         enviar(c, "200 OK", cseq, "Public: ANNOUNCE, SETUP, RECORD, PAUSE, FLUSH, TEARDOWN, OPTIONS, GET_PARAMETER, SET_PARAMETER, POST, GET\r\n", NULL);
     } else {
-        // SETUP, RECORD, /play, /stream, etc.: contestar OK y anotar que pidio
         enviar(c, "200 OK", cseq, "", NULL);
     }
 }
 
-// ---------- programa principal ----------
 int main(void) {
     sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_NET);
     sceNetInit();
@@ -306,7 +292,6 @@ int main(void) {
 
     crypto_sign_keypair(ed_pk, ed_sk);
 
-    // Detectar IP y nombre de la consola
     sceNetCtlInit();
     OrbisNetCtlInfo info;
 
@@ -314,19 +299,17 @@ int main(void) {
     if (sceNetCtlGetInfo(ORBIS_NET_CTL_INFO_IP_ADDRESS, &info) == 0) {
         strncpy(ps4_ip, info.ip_address, sizeof(ps4_ip) - 1);
     } else {
-        aviso("Ronixz Cast: no pude detectar la IP. Revisa el Wi-Fi/cable.");
+        aviso("Ronixz Cast: no pude detectar la IP.");
         return 1;
     }
 
     memset(&info, 0, sizeof(info));
-    if (sceNetCtlGetInfo(ORBIS_NET_CTL_INFO_DHCP_HOSTNAME, &info) == 0
-        && info.dhcp_hostname[0] != 0) {
+    if (sceNetCtlGetInfo(ORBIS_NET_CTL_INFO_DHCP_HOSTNAME, &info) == 0 && info.dhcp_hostname[0] != 0) {
         strncpy(nombre, info.dhcp_hostname, sizeof(nombre) - 1);
         nombre[sizeof(nombre) - 1] = 0;
-        for (char* q = nombre; *q; q++) if (*q == '.') *q = '-'; // los puntos romperian el nombre
+        for (char* q = nombre; *q; q++) if (*q == '.') *q = '-'; 
     }
 
-    // Armar el "host" a partir del nombre de la consola (minusculas, sin espacios ni simbolos)
     {
         char limpio[40];
         int k = 0;
@@ -340,14 +323,13 @@ int main(void) {
         snprintf(host_local, sizeof(host_local), "%s.local", limpio);
     }
 
-    // Pedirle a la PS4 un puerto libre y dejarlo escuchando
     int ts = sceNetSocket("airplay", ORBIS_NET_AF_INET, ORBIS_NET_SOCK_STREAM, 0);
     if (ts >= 0) {
         MiSockaddrIn ta;
         memset(&ta, 0, sizeof(ta));
         ta.sin_len = sizeof(ta);
         ta.sin_family = ORBIS_NET_AF_INET;
-        ta.sin_port = 0; // 0 = que la PS4 elija uno libre
+        ta.sin_port = 0; 
         if (sceNetBind(ts, (OrbisNetSockaddr*)&ta, sizeof(ta)) == 0) {
             unsigned int tl = sizeof(ta);
             if (sceNetGetsockname(ts, (OrbisNetSockaddr*)&ta, &tl) == 0) {
@@ -369,14 +351,14 @@ int main(void) {
     dest.sin_family = ORBIS_NET_AF_INET;
     dest.sin_port = sceNetHtons(5353);
     {
-        uint8_t* ab = (uint8_t*)&dest.sin_addr; // 224.0.0.251
+        uint8_t* ab = (uint8_t*)&dest.sin_addr; 
         ab[0] = 224; ab[1] = 0; ab[2] = 0; ab[3] = 251;
     }
 
     armar();
 
     char msg[128];
-    snprintf(msg, sizeof(msg), "Ronixz Cast listo. Nombre: %s, IP: %s, puerto: %d", nombre, ps4_ip, (int)puerto);
+    snprintf(msg, sizeof(msg), "Ronixz Cast listo. IP: %s, puerto: %d", ps4_ip, (int)puerto);
     aviso(msg);
 
     if (ts >= 0) {
@@ -388,19 +370,16 @@ int main(void) {
     int cli[4] = { -1, -1, -1, -1 };
     int ocio[4] = { 0, 0, 0, 0 };
     for (;;) {
-        // anunciar la PS4 en la red cada ~2 segundos
         if (vuelta % 10 == 0) {
             sceNetSendto(s, pkt, plen, 0, (OrbisNetSockaddr*)&dest, sizeof(dest));
         }
         vuelta++;
 
-        // volver a mostrar el resumen cada ~6 segundos (5 veces) para dar tiempo de tomar foto
         if (repetir > 0 && vuelta % 30 == 0) {
             mostrar_resumen();
             repetir--;
         }
 
-        // atender al iPhone: aceptar conexiones y responder lo que pida
         if (ts >= 0) {
             MiSockaddrIn ca;
             unsigned int cl = sizeof(ca);
@@ -422,7 +401,6 @@ int main(void) {
                 int n = sceNetRecv(cli[i], buf, sizeof(buf) - 1, 0);
                 if (n > 0) {
                     ocio[i] = 0;
-                    // si el cuerpo llego cortado, esperar el resto (maximo ~0.5 s)
                     const char* fin_cab = strstr(buf, "\r\n\r\n");
                     const char* cl_ptr = strstr(buf, "Content-Length:");
                     if (fin_cab && cl_ptr) {
@@ -470,7 +448,7 @@ int main(void) {
                     cli[i] = -1;
                 } else {
                     ocio[i]++;
-                    if (ocio[i] > 150) { // ~30 segundos sin nada
+                    if (ocio[i] > 150) { 
                         sceNetSocketClose(cli[i]);
                         cli[i] = -1;
                     }
