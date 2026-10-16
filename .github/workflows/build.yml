@@ -30,21 +30,20 @@ jobs:
           echo "Toolchain en: $TC"
           echo "OO_PS4_TOOLCHAIN=$TC" >> $GITHUB_ENV
 
-      - name: Preparar el proyecto con mi main.c
+      - name: Preparar el proyecto con mi codigo
         run: |
           chmod +x $OO_PS4_TOOLCHAIN/bin/linux/* || true
           cp -r $OO_PS4_TOOLCHAIN/samples/hello_world $GITHUB_WORKSPACE/app
-          echo "Archivos del ejemplo:"
-          find $GITHUB_WORKSPACE/app -maxdepth 2
-          MAIN=$(find $GITHUB_WORKSPACE/app -name main.c | head -1)
+          MAIN=$(find $GITHUB_WORKSPACE/app -name main.cpp | head -1)
           if [ -z "$MAIN" ]; then
-            MAIN=$(find $GITHUB_WORKSPACE/app -name '*.c' | head -1)
+            MAIN=$(find $GITHUB_WORKSPACE/app -name main.c | head -1)
           fi
           echo "Reemplazando: $MAIN"
           test -n "$MAIN"
-          cp $GITHUB_WORKSPACE/main.c "$MAIN"
+          sed 's|^int sceKernelSendNotificationRequest.*|extern "C" int sceKernelSendNotificationRequest(int, NotifReq*, size_t, int);|' $GITHUB_WORKSPACE/main.c > "$MAIN"
           sed -i 's/^LIBS.*/LIBS := -lc -lkernel -lSceNet -lSceNetCtl -lSceSysmodule/' $GITHUB_WORKSPACE/app/Makefile
-          grep -n "LIBS" $GITHUB_WORKSPACE/app/Makefile || true
+          echo "===== Makefile ====="
+          cat $GITHUB_WORKSPACE/app/Makefile
 
       - name: Compilar
         run: |
