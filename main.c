@@ -125,6 +125,53 @@ static void armar(void) {
     rec_end(p);
 }
 
+// ---------- responder al iPhone ----------
+static void sacar_cseq(const char* buf, char* out, int max) {
+    strcpy(out, "0");
+    const char* p = strstr(buf, "CSeq:");
+    if (!p) return;
+    p += 5;
+    while (*p == ' ') p++;
+    int k = 0;
+    while (*p && *p != '\r' && *p != '\n' && k < max - 1) out[k++] = *p++;
+    out[k] = 0;
+}
+
+static void enviar(int c, const char* estado, const char* cseq, const char* tipo, const char* cuerpo) {
+    char head[300];
+    int bl = cuerpo ? (int)strlen(cuerpo) : 0;
+    int hl = snprintf(head, sizeof(head),
+        "RTSP/1.0 %s\r\nServer: AirTunes/220.68\r\nCSeq: %s\r\n%sContent-Length: %d\r\n\r\n",
+        estado, cseq, tipo, bl);
+    sceNetSend(c, head, hl, 0);
+    if (bl > 0) sceNetSend(c, cuerpo, bl, 0);
+}
+
+static void responder(int c, const char* buf) {
+    char cseq[16];
+    sacar_cseq(buf, cseq, sizeof(cseq));
+    if (strncmp(buf, "GET /info", 9) == 0) {
+        char cuerpo[1024];
+        snprintf(cuerpo, sizeof(cuerpo),
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
+            "<plist version=\"1.0\"><dict>\n"
+            "<key>deviceid</key><string>AA:BB:CC:DD:EE:01</string>\n"
+            "<key>macAddress</key><string>AA:BB:CC:DD:EE:01</string>\n"
+            "<key>features</key><integer>130367356919</integer>\n"
+            "<key>model</key><string>AppleTV3,2</string>\n"
+            "<key>name</key><string>%s</string>\n"
+            "<key>sourceVersion</key><string>220.68</string>\n"
+            "<key>statusFlags</key><integer>4</integer>\n"
+            "<key>pi</key><string>2e388006-13ba-4041-9a67-25dd4a43d536</string>\n"
+            "<key>vv</key><integer>2</integer>\n"
+            "</dict></plist>\n", nombre);
+        enviar(c, "200 OK", cseq, "Content-Type: text/x-apple-plist+xml\r\n", cuerpo);
+    } else {
+        enviar(c, "501 Not Implemented", cseq, "", NULL);
+    }
+}
+
 // ---------- programa principal ----------
 int main(void) {
     sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_NET);
@@ -210,6 +257,8 @@ int main(void) {
     }
 
     int vuelta = 0;
+    int cli[4] = { -1, -1, -1, -1 };
+    int ocio[4] = { 0, 0, 0, 0 };
     for (;;) {
         // anunciar la PS4 en la red cada ~2 segundos
         if (vuelta % 10 == 0) {
@@ -217,34 +266,49 @@ int main(void) {
         }
         vuelta++;
 
-        // ver si el iPhone intenta conectarse y avisar en pantalla que pidio
+        // atender al iPhone: aceptar conexiones y responder lo que pida
         if (ts >= 0) {
             MiSockaddrIn ca;
             unsigned int cl = sizeof(ca);
             memset(&ca, 0, sizeof(ca));
-            int c = sceNetAccept(ts, (OrbisNetSockaddr*)&ca, &cl);
-            if (c >= 0) {
+            int nuevo_c = sceNetAccept(ts, (OrbisNetSockaddr*)&ca, &cl);
+            if (nuevo_c >= 0) {
                 int uno3 = 1;
-                sceNetSetsockopt(c, ORBIS_NET_SOL_SOCKET, ORBIS_NET_SO_NBIO, &uno3, sizeof(uno3));
-                sceKernelUsleep(300000);
-                char buf[256];
+                sceNetSetsockopt(nuevo_c, ORBIS_NET_SOL_SOCKET, ORBIS_NET_SO_NBIO, &uno3, sizeof(uno3));
+                int puesto = -1;
+                for (int i = 0; i < 4; i++) if (cli[i] < 0) { puesto = i; break; }
+                if (puesto < 0) { sceNetSocketClose(cli[0]); puesto = 0; }
+                cli[puesto] = nuevo_c;
+                ocio[puesto] = 0;
+            }
+            for (int i = 0; i < 4; i++) {
+                if (cli[i] < 0) continue;
+                char buf[2048];
                 memset(buf, 0, sizeof(buf));
-                int n = sceNetRecv(c, buf, sizeof(buf) - 1, 0);
-                char m[200];
+                int n = sceNetRecv(cli[i], buf, sizeof(buf) - 1, 0);
                 if (n > 0) {
+                    ocio[i] = 0;
                     char linea[90];
                     int k = 0;
-                    for (int i = 0; i < n && k < 80 && buf[i] != '\r' && buf[i] != '\n'; i++) {
-                        unsigned char ch = (unsigned char)buf[i];
+                    for (int j = 0; j < n && k < 80 && buf[j] != '\r' && buf[j] != '\n'; j++) {
+                        unsigned char ch = (unsigned char)buf[j];
                         linea[k++] = (ch >= 32 && ch < 127) ? (char)ch : '?';
                     }
                     linea[k] = 0;
+                    char m[200];
                     snprintf(m, sizeof(m), "Ronixz Cast: el iPhone pidio: %s", linea);
+                    aviso(m);
+                    responder(cli[i], buf);
+                } else if (n == 0) {
+                    sceNetSocketClose(cli[i]);
+                    cli[i] = -1;
                 } else {
-                    snprintf(m, sizeof(m), "Ronixz Cast: el iPhone se conecto (sin datos)");
+                    ocio[i]++;
+                    if (ocio[i] > 150) { // ~30 segundos sin nada
+                        sceNetSocketClose(cli[i]);
+                        cli[i] = -1;
+                    }
                 }
-                aviso(m);
-                sceNetSocketClose(c);
             }
         }
         sceKernelUsleep(200000);
