@@ -11,6 +11,22 @@
 #include <string.h>
 #include <stdint.h>
 
+// Definiciones de red que OpenOrbis no trae (valores estandar de la PS4/FreeBSD)
+#ifndef ORBIS_NET_SOL_SOCKET
+#define ORBIS_NET_SOL_SOCKET 0xffff
+#endif
+#ifndef ORBIS_NET_SO_REUSEADDR
+#define ORBIS_NET_SO_REUSEADDR 4
+#endif
+typedef struct {
+    uint8_t  sin_len;
+    uint8_t  sin_family;
+    uint16_t sin_port;
+    uint32_t sin_addr;
+    uint16_t sin_vport;
+    char     sin_zero[6];
+} MiSockaddrIn;
+
 #define NOMBRE_RESPALDO "Ronixz PS4"
 static char host_local[64];      // se arma solo a partir del nombre de la consola
 static uint16_t puerto = 7000;   // se reemplaza por un puerto libre que elige la PS4
@@ -25,7 +41,6 @@ typedef struct {
     int unk1; int unk2; int app_id; int error_num; int unk3;
     char use_icon_image_uri; char message[1024]; char icon_uri[1024]; char unk[1024];
 } NotifReq;
-int sceKernelSendNotificationRequest(int, NotifReq*, size_t, int);
 
 static void aviso(const char* texto) {
     NotifReq n;
@@ -35,7 +50,7 @@ static void aviso(const char* texto) {
     n.target_id = -1;
     strncpy(n.message, texto, sizeof(n.message) - 1);
     strcpy(n.icon_uri, "cxml://psnotification/tex_icon_system");
-    sceKernelSendNotificationRequest(0, &n, sizeof(n), 0);
+    sceKernelSendNotificationRequest(0, (OrbisNotificationRequest*)&n, sizeof(n), 0);
 }
 
 // ---------- armar el mensaje mDNS ----------
@@ -150,7 +165,7 @@ int main(void) {
     // Pedirle a la PS4 un puerto libre y dejarlo escuchando
     int ts = sceNetSocket("airplay", ORBIS_NET_AF_INET, ORBIS_NET_SOCK_STREAM, 0);
     if (ts >= 0) {
-        OrbisNetSockaddrIn ta;
+        MiSockaddrIn ta;
         memset(&ta, 0, sizeof(ta));
         ta.sin_len = sizeof(ta);
         ta.sin_family = ORBIS_NET_AF_INET;
@@ -170,12 +185,15 @@ int main(void) {
     int uno = 1;
     sceNetSetsockopt(s, ORBIS_NET_SOL_SOCKET, ORBIS_NET_SO_REUSEADDR, &uno, sizeof(uno));
 
-    OrbisNetSockaddrIn dest;
+    MiSockaddrIn dest;
     memset(&dest, 0, sizeof(dest));
     dest.sin_len = sizeof(dest);
     dest.sin_family = ORBIS_NET_AF_INET;
     dest.sin_port = sceNetHtons(5353);
-    sceNetInetPton(ORBIS_NET_AF_INET, "224.0.0.251", &dest.sin_addr);
+    {
+        uint8_t* ab = (uint8_t*)&dest.sin_addr; // 224.0.0.251
+        ab[0] = 224; ab[1] = 0; ab[2] = 0; ab[3] = 251;
+    }
 
     armar();
 
