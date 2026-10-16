@@ -157,7 +157,7 @@ static void armar(void) {
 
     rec_start(n_airplay, 16, 0x8001, &p);          // TXT
     txt("deviceid=AA:BB:CC:DD:EE:01");
-    txt("features=0x4000211,0x0");
+    txt("features=0x5A7FFFF7,0x1E");
     txt("model=AppleTV3,2");
     txt("srcvers=220.68");
     { char pkl[80]; strcpy(pkl, "pk="); a_hex(ed_pk, 32, pkl + 3); txt(pkl); }
@@ -230,7 +230,7 @@ static void responder(int c, const char* buf, int n) {
             "<plist version=\"1.0\"><dict>\n"
             "<key>deviceid</key><string>AA:BB:CC:DD:EE:01</string>\n"
             "<key>macAddress</key><string>AA:BB:CC:DD:EE:01</string>\n"
-            "<key>features</key><integer>67109393</integer>\n"
+            "<key>features</key><integer>130367356919</integer>\n"
             "<key>model</key><string>AppleTV3,2</string>\n"
             "<key>name</key><string>%s</string>\n"
             "<key>sourceVersion</key><string>220.68</string>\n"
