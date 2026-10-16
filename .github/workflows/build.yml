@@ -18,14 +18,19 @@ jobs:
 
       - name: Bajar OpenOrbis (herramienta para hacer PKG de PS4)
         run: |
-          LATEST=$(curl -sL https://api.github.com/repos/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/latest | grep tag_name | grep -oE '[0-9]+(\.[0-9]+)+' | head -1)
-          echo "Version: $LATEST"
+          curl -sL https://api.github.com/repos/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/latest > release.json
+          grep browser_download_url release.json || true
+          URL=$(grep browser_download_url release.json | grep -E '\.tar\.gz' | head -1 | cut -d '"' -f 4)
+          echo "Descargando: $URL"
+          test -n "$URL"
           mkdir -p $HOME/oo
           cd $HOME/oo
-          curl -L "https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/download/v$LATEST/v$LATEST.tar.gz" -o oo.tar.gz
+          curl -fL "$URL" -o oo.tar.gz
           tar -xzf oo.tar.gz
-          ls
-          echo "OO_PS4_TOOLCHAIN=$HOME/oo" >> $GITHUB_ENV
+          TC=$(dirname $(find $HOME/oo -type d -name samples | head -1))
+          echo "Toolchain en: $TC"
+          ls $TC
+          echo "OO_PS4_TOOLCHAIN=$TC" >> $GITHUB_ENV
 
       - name: Preparar el proyecto con mi main.c
         run: |
