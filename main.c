@@ -1,6 +1,6 @@
-// Ronixz Cast - PRIMER PASO (Optimizado y Corregido)
+// Ronixz Cast - PRIMER PASO (Optimizado y Compilable)
 // Hace que la PS4 se anuncie en la red como destino AirPlay.
-// Mejorado con sceNetSelect (sin latencia) y lectura segura de Content-Length.
+// Solucionado error de sceNetSelect usando polling de baja latencia (20ms).
 
 #include <orbis/libkernel.h>
 #include <orbis/Sysmodule.h>
@@ -10,7 +10,6 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdlib.h>
-#include <sys/select.h> // Necesario para fd_set y select()
 
 #ifndef ORBIS_NET_SOL_SOCKET
 #define ORBIS_NET_SOL_SOCKET 0xffff
@@ -254,7 +253,7 @@ int main(void) {
             }
             sceNetListen(ts, 5);
         }
-        // Socket NO bloqueante para que no cuelgue el select
+        // Socket NO bloqueante 
         int uno2 = 1;
         sceNetSetsockopt(ts, ORBIS_NET_SOL_SOCKET, ORBIS_NET_SO_NBIO, &uno2, sizeof(uno2));
     }
@@ -282,48 +281,18 @@ int main(void) {
     aviso(msg);
 
     int cli[4] = { -1, -1, -1, -1 };
-    
-    // Anuncio inicial de mDNS
-    sceNetSendto(s, pkt, plen, 0, (OrbisNetSockaddr*)&dest, sizeof(dest));
+    int ocio[4] = { 0, 0, 0, 0 };
+    int vuelta = 0;
 
-    // Bucle principal optimizado con Select
     for (;;) {
-        fd_set readfds;
-        FD_ZERO(&readfds);
-        int max_fd = -1;
-
-        if (ts >= 0) {
-            FD_SET(ts, &readfds);
-            max_fd = ts;
-        }
-
-        for (int i = 0; i < 4; i++) {
-            if (cli[i] >= 0) {
-                FD_SET(cli[i], &readfds);
-                if (cli[i] > max_fd) max_fd = cli[i];
-            }
-        }
-
-        // Timeout de 5 segundos. Si nadie habla en 5s, reenviamos mDNS.
-        struct timeval tv;
-        tv.tv_sec = 5;
-        tv.tv_usec = 0;
-
-        // CORRECCION APLICADA AQUI: Se eliminaron los casts a OrbisNetFdSet y OrbisNetTimeval
-        int activity = sceNetSelect(max_fd + 1, (void*)&readfds, NULL, NULL, (void*)&tv);
-
-        if (activity < 0) {
-            break; // Error fatal de red
-        }
-
-        // Si pasaron 5 segundos sin que el iPhone enviara nada, reanunciamos mDNS
-        if (activity == 0) {
+        // Anunciar mDNS a la red cada ~5 segundos (250 vueltas * 20ms = 5000ms)
+        if (vuelta % 250 == 0) {
             sceNetSendto(s, pkt, plen, 0, (OrbisNetSockaddr*)&dest, sizeof(dest));
-            continue;
         }
+        vuelta++;
 
-        // 1. Aceptar nuevas conexiones RTSP del iPhone
-        if (ts >= 0 && FD_ISSET(ts, &readfds)) {
+        // Aceptar nuevas conexiones RTSP del iPhone
+        if (ts >= 0) {
             MiSockaddrIn ca;
             unsigned int cl = sizeof(ca);
             memset(&ca, 0, sizeof(ca));
@@ -342,58 +311,73 @@ int main(void) {
                     puesto = 0; 
                 }
                 cli[puesto] = nuevo_c;
+                ocio[puesto] = 0;
             }
         }
 
-        // 2. Leer peticiones de los iPhones conectados
+        // Leer peticiones de los iPhones conectados
         for (int i = 0; i < 4; i++) {
-            if (cli[i] >= 0 && FD_ISSET(cli[i], &readfds)) {
-                char buf[4096];
-                memset(buf, 0, sizeof(buf));
+            if (cli[i] < 0) continue;
+            
+            char buf[4096];
+            memset(buf, 0, sizeof(buf));
+            int n = sceNetRecv(cli[i], buf, sizeof(buf) - 1, 0);
+            
+            if (n > 0) {
+                ocio[i] = 0;
                 
-                int n = sceNetRecv(cli[i], buf, sizeof(buf) - 1, 0);
-                
-                if (n > 0) {
-                    // Lógica para asegurar que leemos el cuerpo completo si hay Content-Length
-                    char* body_start = strstr(buf, "\r\n\r\n");
-                    if (body_start) {
-                        body_start += 4;
-                        char* cl_ptr = strstr(buf, "Content-Length:");
-                        if (cl_ptr) {
-                            int cl_len = atoi(cl_ptr + 15);
-                            int current_body_len = n - (body_start - buf);
-                            
-                            // Si el paquete TCP se cortó a la mitad, seguimos leyendo
-                            while (current_body_len < cl_len && n < (int)sizeof(buf) - 1) {
-                                int extra = sceNetRecv(cli[i], buf + n, sizeof(buf) - 1 - n, 0);
-                                if (extra <= 0) break;
+                // Asegurar lectura de Content-Length
+                char* body_start = strstr(buf, "\r\n\r\n");
+                if (body_start) {
+                    body_start += 4;
+                    char* cl_ptr = strstr(buf, "Content-Length:");
+                    if (cl_ptr) {
+                        int cl_len = atoi(cl_ptr + 15);
+                        int current_body_len = n - (body_start - buf);
+                        
+                        while (current_body_len < cl_len && n < (int)sizeof(buf) - 1) {
+                            int extra = sceNetRecv(cli[i], buf + n, sizeof(buf) - 1 - n, 0);
+                            if (extra > 0) {
                                 n += extra;
                                 current_body_len += extra;
+                            } else if (extra < 0) {
+                                sceKernelUsleep(5000); // Pequeña pausa de 5ms si bloquea
                             }
                         }
                     }
+                }
 
-                    // Registrar y responder
-                    char linea[90];
-                    int k = 0;
-                    for (int j = 0; j < n && k < 80 && buf[j] != '\r' && buf[j] != '\n'; j++) {
-                        unsigned char ch = (unsigned char)buf[j];
-                        linea[k++] = (ch >= 32 && ch < 127) ? (char)ch : '?';
-                    }
-                    linea[k] = 0;
-                    
-                    char log_msg[240];
-                    snprintf(log_msg, sizeof(log_msg), "iPhone pidio: %s", linea);
-                    anotar(log_msg);
-                    
-                    responder(cli[i], buf);
-                } else if (n == 0 || n < 0) {
-                    // El iPhone cerró la conexión
+                // Registrar y responder
+                char linea[90];
+                int k = 0;
+                for (int j = 0; j < n && k < 80 && buf[j] != '\r' && buf[j] != '\n'; j++) {
+                    unsigned char ch = (unsigned char)buf[j];
+                    linea[k++] = (ch >= 32 && ch < 127) ? (char)ch : '?';
+                }
+                linea[k] = 0;
+                
+                char log_msg[240];
+                snprintf(log_msg, sizeof(log_msg), "iPhone pidio: %s", linea);
+                anotar(log_msg);
+                
+                responder(cli[i], buf);
+                
+            } else if (n == 0) {
+                // Conexión cerrada por el iPhone
+                sceNetSocketClose(cli[i]);
+                cli[i] = -1;
+            } else {
+                // n < 0 (no hay datos)
+                ocio[i]++;
+                if (ocio[i] > 750) { // ~15 segundos inactivo (750 * 20ms)
                     sceNetSocketClose(cli[i]);
                     cli[i] = -1;
                 }
             }
         }
+        
+        // Latencia bajada al minimo (20 milisegundos en lugar de 200)
+        sceKernelUsleep(20000);
     }
     return 0;
 }
