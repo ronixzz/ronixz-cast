@@ -1,7 +1,6 @@
-// Ronixz Cast - PRIMER PASO (sin probar)
+// Ronixz Cast - PRIMER PASO (Tu version con lectura de buffers corregida)
 // Hace que la PS4 se anuncie en la red como destino AirPlay.
-// Todavia NO recibe video: solo intenta aparecer en la lista de AirPlay.
-// La IP, el nombre, el host y el puerto se detectan/eligen solos.
+// Todavia NO recibe video: requiere integrar libreria criptografica para el pair-verify.
 
 #include <orbis/libkernel.h>
 #include <orbis/Sysmodule.h>
@@ -12,7 +11,6 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-// Definiciones de red que OpenOrbis no trae (valores estandar de la PS4/FreeBSD)
 #ifndef ORBIS_NET_SOL_SOCKET
 #define ORBIS_NET_SOL_SOCKET 0xffff
 #endif
@@ -32,12 +30,12 @@ typedef struct {
 } MiSockaddrIn;
 
 #define NOMBRE_RESPALDO "Ronixz PS4"
-static char host_local[64];      // se arma solo a partir del nombre de la consola
-static uint16_t puerto = 7000;   // se reemplaza por un puerto libre que elige la PS4
+static char host_local[64];      
+static uint16_t puerto = 7000;   
 
 static char ps4_ip[16]   = "0.0.0.0";
 static char nombre[48]   = NOMBRE_RESPALDO;
-static char n_airplay[96];   // "<nombre>._airplay._tcp.local"
+static char n_airplay[96];   
 
 // ---------- aviso en pantalla de la PS4 ----------
 typedef struct {
@@ -103,40 +101,40 @@ static void armar(void) {
     snprintf(n_airplay, sizeof(n_airplay), "%s._airplay._tcp.local", nombre);
 
     plen = 0;
-    w16(0); w16(0x8400); w16(0); w16(4); w16(0); w16(0); // cabecera: 4 respuestas
+    w16(0); w16(0x8400); w16(0); w16(4); w16(0); w16(0); 
 
-    rec_start("_airplay._tcp.local", 12, 1, &p);   // PTR
+    rec_start("_airplay._tcp.local", 12, 1, &p);   
     wname(n_airplay);
     rec_end(p);
 
-    rec_start(n_airplay, 33, 0x8001, &p);          // SRV
+    rec_start(n_airplay, 33, 0x8001, &p);          
     w16(0); w16(0); w16(puerto);
     wname(host_local);
     rec_end(p);
 
-    rec_start(n_airplay, 16, 0x8001, &p);          // TXT
+    rec_start(n_airplay, 16, 0x8001, &p);          
     txt("deviceid=AA:BB:CC:DD:EE:01");
     txt("features=0x5A7FFFF7,0x1E");
     txt("model=AppleTV3,2");
     txt("srcvers=220.68");
     rec_end(p);
 
-    rec_start(host_local, 1, 0x8001, &p);                // A (IP)
+    rec_start(host_local, 1, 0x8001, &p);                
     w8(a); w8(b); w8(c); w8(d);
     rec_end(p);
 }
 
-// ---------- historial para poder tomar foto con calma ----------
+// ---------- historial ----------
 static char historial[4][120];
 static int total_hist = 0;
-static int repetir = 0;   // cuantas veces mas se vuelve a mostrar el resumen
+static int repetir = 0;   
 
 static void anotar(const char* linea) {
     strncpy(historial[total_hist % 4], linea, 119);
     historial[total_hist % 4][119] = 0;
     total_hist++;
     repetir = 5;
-    FILE* f = fopen("/data/ronixz_cast.log", "a"); // por si quieres leerlo despues
+    FILE* f = fopen("/data/ronixz_cast.log", "a"); 
     if (f) { fprintf(f, "%s\n", linea); fclose(f); }
 }
 
@@ -196,24 +194,20 @@ static void responder(int c, const char* buf) {
             "</dict></plist>\n", nombre);
         enviar(c, "200 OK", cseq, "Content-Type: text/x-apple-plist+xml\r\n", cuerpo);
     } else if (strncmp(buf, "POST /pair-setup", 16) == 0) {
-        // paso esperado 2: emparejamiento (respuesta de relleno, sin cifrado real)
         char d[32];
         for (int i = 0; i < 32; i++) d[i] = (char)((i * 7 + 1) & 255);
         enviar_bin(c, "200 OK", cseq, "Content-Type: application/octet-stream\r\n", d, 32);
     } else if (strncmp(buf, "POST /pair-verify", 17) == 0) {
-        // paso esperado 3: verificacion (respuesta de relleno)
         char d[96];
         for (int i = 0; i < 96; i++) d[i] = (char)((i * 5 + 3) & 255);
         enviar_bin(c, "200 OK", cseq, "Content-Type: application/octet-stream\r\n", d, 96);
     } else if (strncmp(buf, "POST /fp-setup", 14) == 0) {
-        // paso esperado 4: FairPlay de Apple (respuesta de relleno)
         char d[142];
         for (int i = 0; i < 142; i++) d[i] = (char)((i * 3 + 9) & 255);
         enviar_bin(c, "200 OK", cseq, "Content-Type: application/octet-stream\r\n", d, 142);
     } else if (strncmp(buf, "OPTIONS", 7) == 0) {
         enviar(c, "200 OK", cseq, "Public: ANNOUNCE, SETUP, RECORD, PAUSE, FLUSH, TEARDOWN, OPTIONS, GET_PARAMETER, SET_PARAMETER, POST, GET\r\n", NULL);
     } else {
-        // SETUP, RECORD, /play, /stream, etc.: contestar OK y anotar que pidio
         enviar(c, "200 OK", cseq, "", NULL);
     }
 }
@@ -224,7 +218,6 @@ int main(void) {
     sceNetInit();
     sceNetPoolCreate("ronixz", 64 * 1024, 0);
 
-    // Detectar IP y nombre de la consola
     sceNetCtlInit();
     OrbisNetCtlInfo info;
 
@@ -241,10 +234,9 @@ int main(void) {
         && info.dhcp_hostname[0] != 0) {
         strncpy(nombre, info.dhcp_hostname, sizeof(nombre) - 1);
         nombre[sizeof(nombre) - 1] = 0;
-        for (char* q = nombre; *q; q++) if (*q == '.') *q = '-'; // los puntos romperian el nombre
+        for (char* q = nombre; *q; q++) if (*q == '.') *q = '-'; 
     }
 
-    // Armar el "host" a partir del nombre de la consola (minusculas, sin espacios ni simbolos)
     {
         char limpio[40];
         int k = 0;
@@ -258,14 +250,13 @@ int main(void) {
         snprintf(host_local, sizeof(host_local), "%s.local", limpio);
     }
 
-    // Pedirle a la PS4 un puerto libre y dejarlo escuchando
     int ts = sceNetSocket("airplay", ORBIS_NET_AF_INET, ORBIS_NET_SOCK_STREAM, 0);
     if (ts >= 0) {
         MiSockaddrIn ta;
         memset(&ta, 0, sizeof(ta));
         ta.sin_len = sizeof(ta);
         ta.sin_family = ORBIS_NET_AF_INET;
-        ta.sin_port = 0; // 0 = que la PS4 elija uno libre
+        ta.sin_port = 0; 
         if (sceNetBind(ts, (OrbisNetSockaddr*)&ta, sizeof(ta)) == 0) {
             unsigned int tl = sizeof(ta);
             if (sceNetGetsockname(ts, (OrbisNetSockaddr*)&ta, &tl) == 0) {
@@ -287,7 +278,7 @@ int main(void) {
     dest.sin_family = ORBIS_NET_AF_INET;
     dest.sin_port = sceNetHtons(5353);
     {
-        uint8_t* ab = (uint8_t*)&dest.sin_addr; // 224.0.0.251
+        uint8_t* ab = (uint8_t*)&dest.sin_addr; 
         ab[0] = 224; ab[1] = 0; ab[2] = 0; ab[3] = 251;
     }
 
@@ -306,19 +297,16 @@ int main(void) {
     int cli[4] = { -1, -1, -1, -1 };
     int ocio[4] = { 0, 0, 0, 0 };
     for (;;) {
-        // anunciar la PS4 en la red cada ~2 segundos
         if (vuelta % 10 == 0) {
             sceNetSendto(s, pkt, plen, 0, (OrbisNetSockaddr*)&dest, sizeof(dest));
         }
         vuelta++;
 
-        // volver a mostrar el resumen cada ~6 segundos (5 veces) para dar tiempo de tomar foto
         if (repetir > 0 && vuelta % 30 == 0) {
             mostrar_resumen();
             repetir--;
         }
 
-        // atender al iPhone: aceptar conexiones y responder lo que pida
         if (ts >= 0) {
             MiSockaddrIn ca;
             unsigned int cl = sizeof(ca);
@@ -335,11 +323,35 @@ int main(void) {
             }
             for (int i = 0; i < 4; i++) {
                 if (cli[i] < 0) continue;
-                char buf[2048];
+                char buf[4096];
                 memset(buf, 0, sizeof(buf));
+                
                 int n = sceNetRecv(cli[i], buf, sizeof(buf) - 1, 0);
+                
                 if (n > 0) {
                     ocio[i] = 0;
+                    
+                    // CORRECCION: Leer fragmentos cortados por el TCP
+                    char* body_start = strstr(buf, "\r\n\r\n");
+                    if (body_start) {
+                        body_start += 4;
+                        char* cl_ptr = strstr(buf, "Content-Length:");
+                        if (cl_ptr) {
+                            int cl_len = atoi(cl_ptr + 15);
+                            int current_body_len = n - (body_start - buf);
+                            
+                            while (current_body_len < cl_len && n < (int)sizeof(buf) - 1) {
+                                int extra = sceNetRecv(cli[i], buf + n, sizeof(buf) - 1 - n, 0);
+                                if (extra > 0) {
+                                    n += extra;
+                                    current_body_len += extra;
+                                } else if (extra < 0) {
+                                    sceKernelUsleep(5000); 
+                                }
+                            }
+                        }
+                    }
+
                     char linea[90];
                     int k = 0;
                     for (int j = 0; j < n && k < 80 && buf[j] != '\r' && buf[j] != '\n'; j++) {
@@ -351,9 +363,7 @@ int main(void) {
                     int cl_n = pcl ? atoi(pcl + 15) : 0;
                     char linea2[120];
                     snprintf(linea2, sizeof(linea2), "%s (cuerpo %d)", linea, cl_n);
-                    char m[240];
-                    snprintf(m, sizeof(m), "Ronixz Cast: el iPhone pidio: %s", linea2);
-                    aviso(m);
+                    
                     anotar(linea2);
                     responder(cli[i], buf);
                 } else if (n == 0) {
@@ -361,14 +371,14 @@ int main(void) {
                     cli[i] = -1;
                 } else {
                     ocio[i]++;
-                    if (ocio[i] > 150) { // ~30 segundos sin nada
+                    if (ocio[i] > 150) { 
                         sceNetSocketClose(cli[i]);
                         cli[i] = -1;
                     }
                 }
             }
         }
-        sceKernelUsleep(200000);
+        sceKernelUsleep(200000); // Mantuve tu sleep original de 200ms
     }
     return 0;
 }
