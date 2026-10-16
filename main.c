@@ -157,7 +157,7 @@ static void armar(void) {
 
     rec_start(n_airplay, 16, 0x8001, &p);          // TXT
     txt("deviceid=AA:BB:CC:DD:EE:01");
-    txt("features=0x5A7FFFF7,0x1E");
+    txt("features=0x4000211,0x0");
     txt("model=AppleTV3,2");
     txt("srcvers=220.68");
     { char pkl[80]; strcpy(pkl, "pk="); a_hex(ed_pk, 32, pkl + 3); txt(pkl); }
@@ -169,13 +169,13 @@ static void armar(void) {
 }
 
 // ---------- historial para poder tomar foto con calma ----------
-static char historial[4][120];
+static char historial[4][160];
 static int total_hist = 0;
 static int repetir = 0;   // cuantas veces mas se vuelve a mostrar el resumen
 
 static void anotar(const char* linea) {
-    strncpy(historial[total_hist % 4], linea, 119);
-    historial[total_hist % 4][119] = 0;
+    strncpy(historial[total_hist % 4], linea, 159);
+    historial[total_hist % 4][159] = 0;
     total_hist++;
     repetir = 5;
     FILE* f = fopen("/data/ronixz_cast.log", "a"); // por si quieres leerlo despues
@@ -230,7 +230,7 @@ static void responder(int c, const char* buf, int n) {
             "<plist version=\"1.0\"><dict>\n"
             "<key>deviceid</key><string>AA:BB:CC:DD:EE:01</string>\n"
             "<key>macAddress</key><string>AA:BB:CC:DD:EE:01</string>\n"
-            "<key>features</key><integer>130367356919</integer>\n"
+            "<key>features</key><integer>67109393</integer>\n"
             "<key>model</key><string>AppleTV3,2</string>\n"
             "<key>name</key><string>%s</string>\n"
             "<key>sourceVersion</key><string>220.68</string>\n"
@@ -444,9 +444,23 @@ int main(void) {
                     linea[k] = 0;
                     const char* pcl = strstr(buf, "Content-Length:");
                     int cl_n = pcl ? atoi(pcl + 15) : 0;
-                    char linea2[120];
-                    snprintf(linea2, sizeof(linea2), "%s (cuerpo %d)", linea, cl_n);
-                    char m[240];
+                    char frag[60];
+                    frag[0] = 0;
+                    if (cl_n > 0 && strstr(linea, "pair") == NULL && strstr(linea, "fp-setup") == NULL) {
+                        const char* fb = strstr(buf, "\r\n\r\n");
+                        if (fb) {
+                            fb += 4;
+                            int jj = 0;
+                            for (int q = 0; fb + q < buf + n && jj < 55; q++) {
+                                unsigned char ch = (unsigned char)fb[q];
+                                frag[jj++] = (ch >= 32 && ch < 127) ? (char)ch : '.';
+                            }
+                            frag[jj] = 0;
+                        }
+                    }
+                    char linea2[160];
+                    snprintf(linea2, sizeof(linea2), "%s (cuerpo %d) %s", linea, cl_n, frag);
+                    char m[300];
                     snprintf(m, sizeof(m), "Ronixz Cast: el iPhone pidio: %s", linea2);
                     aviso(m);
                     anotar(linea2);
