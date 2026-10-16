@@ -1,4 +1,4 @@
-// Ronixz Cast - PRIMER PASO (Optimizado)
+// Ronixz Cast - PRIMER PASO (Optimizado y Corregido)
 // Hace que la PS4 se anuncie en la red como destino AirPlay.
 // Mejorado con sceNetSelect (sin latencia) y lectura segura de Content-Length.
 
@@ -309,7 +309,8 @@ int main(void) {
         tv.tv_sec = 5;
         tv.tv_usec = 0;
 
-        int activity = sceNetSelect(max_fd + 1, (OrbisNetFdSet*)&readfds, NULL, NULL, (OrbisNetTimeval*)&tv);
+        // CORRECCION APLICADA AQUI: Se eliminaron los casts a OrbisNetFdSet y OrbisNetTimeval
+        int activity = sceNetSelect(max_fd + 1, (void*)&readfds, NULL, NULL, (void*)&tv);
 
         if (activity < 0) {
             break; // Error fatal de red
